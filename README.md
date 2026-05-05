@@ -177,31 +177,7 @@ solana-speak-pay/
 └── public/                      # Static assets
 ```
 
-## 🗺️ Roadmap
-
-### Current Status: In Development 🚧
-
-- [x] Project initialization
-- [ ] Voice recognition system
-- [ ] Solana wallet integration
-- [ ] AI command parsing
-- [ ] Basic payment functionality
-- [ ] Cross-chain bridging (LiFi)
-- [ ] Voice feedback (ElevenLabs)
-- [ ] Contact management
-- [ ] Transaction history
-- [ ] Mobile optimization
-- [ ] Accessibility compliance
-
-### Future Enhancements
-- Multi-language support
-- Biometric voice authentication
-- Recurring payments
-- DeFi voice commands
-- NFT transfers
-- Payment request generation
-
-## 🔧 Configuration
+## � Configuration
 
 ### Environment Variables
 
