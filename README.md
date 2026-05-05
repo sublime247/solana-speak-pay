@@ -265,10 +265,10 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## 📞 Support
 
-- **Documentation**: [Full PRD](./PRD.md)
+<!-- - **Documentation**: [Full PRD](./PRD.md) -->
 - **Issues**: [GitHub Issues](https://github.com/sublime247/solana-speak-pay/issues)
-- **Discord**: [Join our community](#)
-- **Twitter**: [@SolanaSpeakPay](#)
+<!-- - **Discord**: [Join our community](#)  -->
+<!-- - **Twitter**: [@SolanaSpeakPay](#) -->
 
 ---
 
