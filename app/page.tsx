@@ -7,6 +7,7 @@ import BalanceCard from "@/components/BalanceCard";
 import RecentTransactions from "@/components/RecentTransactions";
 import QuickCommands from "@/components/QuickCommands";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import ClientOnly from "@/components/ClientOnly";
 
 export type AppView = "home" | "history" | "contacts";
 
@@ -14,10 +15,8 @@ export default function Home() {
   const { connection } = useConnection();
   const { publicKey } = useWallet();
   const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [activeView, setActiveView] = useState<AppView>("home");
-  const [aiResponse, setAiResponse] = useState("");
   const [processingVoice, setProcessingVoice] = useState(false);
   const [pendingTx, setPendingTx] = useState<any>(null);
 
@@ -68,7 +67,6 @@ export default function Home() {
         setActiveView("contacts");
       }
 
-      setAiResponse(finalResponse);
       setCommandHistory(prev => [...prev, { text: finalResponse, isAi: true }]);
 
       // Voice Feedback
@@ -82,10 +80,14 @@ export default function Home() {
       } catch (e) { console.error(e); }
 
     } catch (error) {
-      setAiResponse("Something went wrong processing that.");
+      console.error(error);
     } finally {
       setProcessingVoice(false);
     }
+  };
+
+  const handleQuickCommand = (cmd: string) => {
+    parseVoiceCommand(cmd);
   };
 
   return (
@@ -129,7 +131,7 @@ export default function Home() {
           {activeView === "home" && (
             <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "40px", alignItems: "center" }}>
               
-              {/* The "Stage" */}
+              {/* The \"Stage\" */}
               <div style={{ textAlign: "center", marginTop: "40px" }}>
                 <h2 className="font-display gradient-text" style={{ fontSize: "48px", fontWeight: 800, marginBottom: "16px" }}>How can I help?</h2>
                 <p style={{ color: "var(--text-secondary)", fontSize: "18px" }}>Voice-activated payments and bridging on Solana.</p>
@@ -185,13 +187,26 @@ export default function Home() {
           tx={pendingTx}
           onConfirm={() => {
             setShowModal(false);
-            setAiResponse("Transaction submitted!");
           }}
           onCancel={() => setShowModal(false)}
         />
       )}
 
       <style jsx>{`
+        .wallet-adapter-sidebar :global(.wallet-adapter-button) {
+          width: 100% !important;
+          justify-content: center !important;
+          background: rgba(255, 255, 255, 0.05) !important;
+          border: 1px solid var(--border-subtle) !important;
+          border-radius: 12px !important;
+          font-size: 14px !important;
+          height: 44px !important;
+          transition: all 0.2s ease !important;
+        }
+        .wallet-adapter-sidebar :global(.wallet-adapter-button:hover) {
+          background: rgba(255, 255, 255, 0.1) !important;
+          border-color: var(--solana-green) !important;
+        }
         .mobile-only { display: none; }
         @media (max-width: 1024px) {
           aside { display: none !important; }

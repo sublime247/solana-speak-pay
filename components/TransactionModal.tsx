@@ -12,6 +12,19 @@ interface Tx {
   chain?: string;
 }
 
+interface BridgeRoute {
+  id: string;
+  steps: {
+    tool: string;
+    action: string;
+  }[];
+  estimate: {
+    toAmountUSD: string;
+    executionDuration: number;
+    feeCosts: { amount: string; token: { symbol: string } }[];
+  };
+}
+
 interface TransactionModalProps {
   tx: Tx;
   onConfirm: (signature?: string) => void;
@@ -30,16 +43,17 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
   const [step, setStep] = useState<"review" | "signing" | "done" | "error">("review");
   const [errorMsg, setErrorMsg] = useState("");
   const [signature, setSignature] = useState("");
-  const { send, loading, error } = useSendTransaction();
+  const [loading, setLoading] = useState(false);
+  const [route, setRoute] = useState<BridgeRoute | null>(null);
+  const { send, error: solError } = useSendTransaction();
   const { connected } = useWallet();
   
   const usdValue = (parseFloat(tx.amount) * (MOCK_RATE_USD[tx.token] ?? 1)).toFixed(2);
 
-  const [bridgeQuote, setBridgeQuote] = useState<any>(null);
-
   useEffect(() => {
     if (tx.type === "bridge") {
-      const fetchQuote = async () => {
+      const fetchRoute = async () => {
+        setLoading(true);
         try {
           const { getBridgeQuote } = await import("@/lib/lifi/bridge");
           const quote = await getBridgeQuote({
@@ -48,14 +62,15 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
             toAmount: tx.amount,
             toAddress: tx.recipient,
           });
-          if (quote) {
-            setBridgeQuote(quote);
-          }
-        } catch (e) {
-          console.error("Failed to fetch bridge quote", e);
+          setRoute(quote as BridgeRoute);
+        } catch {
+          setErrorMsg("Failed to fetch bridge quote.");
+          setStep("error");
+        } finally {
+          setLoading(false);
         }
       };
-      fetchQuote();
+      fetchRoute();
     }
   }, [tx]);
 
@@ -76,8 +91,9 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
           setStep("done");
           onConfirm();
         }, 3000);
-      } catch (err: any) {
-        setErrorMsg(err.message || "Bridge failed");
+      } catch (e: unknown) {
+        const errorMsg = e instanceof Error ? e.message : "Bridge failed";
+        setErrorMsg(errorMsg);
         setStep("error");
       }
       return;
@@ -97,12 +113,15 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
         setStep("done");
         setTimeout(() => onConfirm(txSignature), 1500);
       } else {
-        setErrorMsg(error || "Transaction failed");
+        setErrorMsg(solError || "Transaction failed");
         setStep("error");
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || "Transaction failed");
+    } catch (e: unknown) {
+      const errorMsg = e instanceof Error ? e.message : "Transaction failed";
+      setErrorMsg(errorMsg);
       setStep("error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -230,15 +249,15 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "24px" }}>
               <DetailRow label={tx.type === "bridge" ? "From Chain" : "To"} value={tx.type === "bridge" ? (tx.chain ?? "Ethereum") : tx.recipient} />
               {tx.type === "bridge" && <DetailRow label="To Chain" value="Solana" />}
-              {tx.type === "bridge" && <DetailRow label="Protocol" value={bridgeQuote?.toolDetails?.name || "LiFi Protocol"} highlight />}
-              <DetailRow 
-                label="Network Fee" 
-                value={bridgeQuote ? `$${parseFloat(bridgeQuote.estimate.feeCosts[0]?.amountUsd || "0").toFixed(2)}` : `${MOCK_FEE} SOL`} 
-              />
-              <DetailRow 
-                label="Estimated Time" 
-                value={bridgeQuote ? `${Math.ceil(bridgeQuote.estimate.executionDuration / 60)} minutes` : (tx.type === "bridge" ? "2–5 minutes" : "~1 second")} 
-              />
+               {tx.type === "bridge" && <DetailRow label="Protocol" value={route?.steps[0]?.tool || "LiFi Protocol"} highlight />}
+               <DetailRow 
+                 label="Network Fee" 
+                 value={route ? `$${parseFloat(route.estimate.feeCosts[0]?.amount || "0").toFixed(2)}` : `${MOCK_FEE} SOL`} 
+               />
+               <DetailRow 
+                 label="Estimated Time" 
+                 value={route ? `${Math.ceil(route.estimate.executionDuration / 60)} minutes` : (tx.type === "bridge" ? "2–5 minutes" : "~1 second")} 
+               />
             </div>
 
             {/* Warning */}

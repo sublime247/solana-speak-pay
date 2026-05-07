@@ -19,7 +19,7 @@ export async function textToSpeech(text: string): Promise<string | null> {
   });
 
   try {
-    const audioStream = await client.textToSpeech.convert(
+    const audio = await client.textToSpeech.convert(
       "JBFqnCBsd6RMkjVDRZzb", // George
       {
         text: text,
@@ -30,7 +30,7 @@ export async function textToSpeech(text: string): Promise<string | null> {
 
     // Convert readable stream to Buffer using a reader
     const chunks: Uint8Array[] = [];
-    const reader = (audioStream as any).getReader();
+    const reader = audio.getReader();
     
     while (true) {
       const { done, value } = await reader.read();
@@ -38,10 +38,18 @@ export async function textToSpeech(text: string): Promise<string | null> {
       if (value) chunks.push(value);
     }
     
-    const audioBuffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)));
-    return audioBuffer.toString("base64");
-  } catch (error: any) {
-    console.error("ElevenLabs SDK Error:", error.message);
+    const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+    const combinedBuffer = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combinedBuffer.set(chunk, offset);
+      offset += chunk.length;
+    }
+    
+    return Buffer.from(combinedBuffer).toString('base64');
+  } catch (error: unknown) {
+    const errorMsg = error instanceof Error ? error.message : "Unknown error";
+    console.error("ElevenLabs SDK Error:", errorMsg);
     return null;
   }
 }

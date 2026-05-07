@@ -10,27 +10,33 @@ const TYPE_CONFIG: Record<string, { icon: string; color: string; bg: string }> =
   transfer: { icon: "⇄", color: "#4da8ff", bg: "rgba(77,168,255,0.1)" },
 };
 
-interface RecentTransactionsProps {
-  compact: boolean;
+interface Transaction {
+  id: string;
+  signature: string;
+  date: string;
+  time: string;
+  status: string;
+  amount?: string;
+  type?: string;
 }
 
-export default function RecentTransactions({ compact }: RecentTransactionsProps) {
+export default function RecentTransactions({ compact = false }: { compact?: boolean }) {
   const { publicKey, connected } = useWallet();
   const { connection } = useConnection();
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!connected || !publicKey) {
-      setTransactions([]);
-      return;
+      const timer = setTimeout(() => setTransactions([]), 0);
+      return () => clearTimeout(timer);
     }
 
     const fetchHistory = async () => {
       setLoading(true);
       try {
         const history = await getTransactionHistory(connection, publicKey, compact ? 3 : 10);
-        setTransactions(history);
+        setTransactions(history as Transaction[]);
       } catch (e) {
         console.error("Failed to fetch history", e);
       } finally {
@@ -91,7 +97,8 @@ export default function RecentTransactions({ compact }: RecentTransactionsProps)
           </p>
         ) : (
           transactions.map((tx) => {
-            const cfg = TYPE_CONFIG[tx.type] || TYPE_CONFIG.transfer;
+            const typeKey = (tx.type || "transfer") as keyof typeof TYPE_CONFIG;
+            const cfg = TYPE_CONFIG[typeKey] || TYPE_CONFIG.transfer;
             return (
               <div
                 key={tx.id}

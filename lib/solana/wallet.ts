@@ -152,7 +152,7 @@ export async function getTransactionHistory(
   connection: Connection,
   publicKey: PublicKey,
   limit: number = 10
-): Promise<any[]> {
+): Promise<unknown[]> {
   try {
     const signatures = await connection.getSignaturesForAddress(publicKey, { limit });
     
@@ -167,8 +167,8 @@ export async function getTransactionHistory(
       time: sig.blockTime ? new Date(sig.blockTime * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "",
       positive: false, 
     }));
-  } catch (error) {
-    console.error("Error fetching history:", error);
-    return [];
-  }
+  } catch (e: unknown) {
+      console.error("Error fetching history:", e);
+      return [];
+    }
 }

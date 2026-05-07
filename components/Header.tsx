@@ -18,6 +18,18 @@ export default function Header({ activeView, setActiveView }: HeaderProps) {
     setMounted(true);
   }, []);
 
+  if (!mounted) {
+    return (
+      <header style={{ 
+        height: "80px", 
+        borderBottom: "1px solid var(--border-color)", 
+        display: "flex", 
+        alignItems: "center", 
+        padding: "0 40px" 
+      }} />
+    );
+  }
+
   const navItems: { label: string; view: AppView; icon: string }[] = [
     { label: "Home", view: "home", icon: "⚡" },
     { label: "History", view: "history", icon: "📋" },

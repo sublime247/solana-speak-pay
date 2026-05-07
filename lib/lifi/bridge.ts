@@ -11,7 +11,7 @@ export interface BridgeQuoteParams {
 /**
  * Get a quote for bridging to Solana
  */
-export async function getBridgeQuote(params: BridgeQuoteParams): Promise<any> {
+export async function getBridgeQuote(params: BridgeQuoteParams): Promise<unknown> {
   try {
     const chainIds: Record<string, string> = {
       'ethereum': '1',

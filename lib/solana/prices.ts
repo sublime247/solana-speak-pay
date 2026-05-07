@@ -19,7 +19,7 @@ export async function getSolPrice(): Promise<number> {
       const price = data.data["So11111111111111111111111111111111111111112"]?.price;
       if (price) return parseFloat(price);
     }
-  } catch (e) {
+  } catch {
     console.warn("Jupiter price fetch failed, trying CoinGecko...");
   }
 
@@ -34,7 +34,7 @@ export async function getSolPrice(): Promise<number> {
       const data = await response.json();
       return data.solana.usd;
     }
-  } catch (e) {
+  } catch {
     console.warn("CoinGecko price fetch failed");
   }
 

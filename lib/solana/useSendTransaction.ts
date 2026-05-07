@@ -68,9 +68,9 @@ export function useSendTransaction() {
 
       setLoading(false);
       return signature;
-    } catch (err: any) {
-      console.error("Transaction error:", err);
-      setError(err.message || "Transaction failed");
+    } catch (e: unknown) {
+      const errorMsg = e instanceof Error ? e.message : "Transaction failed";
+      setError(errorMsg);
       setLoading(false);
       return null;
     }

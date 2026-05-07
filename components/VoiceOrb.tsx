@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -19,19 +20,10 @@ interface VoiceOrbProps {
   processing: boolean;
 }
 
-const DEMO_COMMANDS = [
-  "Send 10 USDC to Alice",
-  "What's my balance?",
-  "Bridge 100 USDC from Ethereum",
-  "Show my recent transactions",
-  "Transfer 5 SOL to Sarah",
-];
-
 export default function VoiceOrb({ isListening, onToggle, onTranscript, processing }: VoiceOrbProps) {
   const [barHeights, setBarHeights] = useState([6, 6, 6, 6, 6, 6, 6]);
   const recognitionRef = useRef<any>(null);
   const animFrameRef = useRef<number | null>(null);
-  const demoIndexRef = useRef(0);
 
   // Animate sound bars
   useEffect(() => {
@@ -45,7 +37,8 @@ export default function VoiceOrb({ isListening, onToggle, onTranscript, processi
       animate();
     } else {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-      setBarHeights([6, 6, 6, 6, 6, 6, 6]);
+      const timer = setTimeout(() => setBarHeights([6, 6, 6, 6, 6, 6, 6]), 0);
+      return () => clearTimeout(timer);
     }
     return () => {
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
@@ -62,38 +55,51 @@ export default function VoiceOrb({ isListening, onToggle, onTranscript, processi
       onToggle(true);
 
       // Try real Web Speech API
-      if ("SpeechRecognition" in window || "webkitSpeechRecognition" in window) {
-        const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-        if (SR) {
-          const recognition = new SR();
-          recognition.continuous = false;
-          recognition.interimResults = false;
-          recognition.lang = "en-US";
-          
-          recognition.onresult = (e: any) => {
-            const text = e.results[0][0].transcript;
-            onToggle(false);
-            onTranscript(text);
-          };
-          
-          recognition.onerror = (e: any) => {
-            console.error("Speech Recognition Error:", e.error);
-            onToggle(false);
-            if (e.error === 'no-speech') {
-              onTranscript(""); // Don't guess, just clear
-            }
-          };
-          
-          recognition.onend = () => onToggle(false);
-          recognition.start();
-          recognitionRef.current = recognition;
-        }
+      const WindowSpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      
+      if (WindowSpeechRecognition) {
+        const recognition = new WindowSpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        recognition.lang = "en-US";
+        
+        recognition.onresult = (e: SpeechRecognitionEvent) => {
+          const text = e.results[0][0].transcript;
+          onToggle(false);
+          onTranscript(text);
+        };
+        
+        recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
+          console.error("Speech Recognition Error:", e.error);
+          onToggle(false);
+          if (e.error === 'no-speech') {
+            onTranscript(""); 
+          }
+        };
+        
+        recognition.onend = () => onToggle(false);
+        recognition.start();
+        recognitionRef.current = recognition;
       } else {
         alert("Your browser does not support voice recognition. Please try Chrome.");
         onToggle(false);
       }
     }
   };
+
+interface SpeechRecognitionEvent {
+  results: {
+    [key: number]: {
+      [key: number]: {
+        transcript: string;
+      };
+    };
+  };
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string;
+}
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "24px" }}>
