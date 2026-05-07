@@ -1,15 +1,23 @@
 "use client";
 
 import { AppView } from "@/app/page";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { useEffect, useState } from "react";
 
 interface HeaderProps {
-  walletConnected: boolean;
-  onConnectWallet: () => void;
   activeView: AppView;
   setActiveView: (v: AppView) => void;
 }
 
-export default function Header({ walletConnected, onConnectWallet, activeView, setActiveView }: HeaderProps) {
+export default function Header({ activeView, setActiveView }: HeaderProps) {
+  const [mounted, setMounted] = useState(false);
+  const wallet = useWallet();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const navItems: { label: string; view: AppView; icon: string }[] = [
     { label: "Home", view: "home", icon: "⚡" },
     { label: "History", view: "history", icon: "📋" },
@@ -107,30 +115,29 @@ export default function Header({ walletConnected, onConnectWallet, activeView, s
           ))}
         </nav>
 
-        {/* Wallet button */}
-        <button
-          id="connect-wallet-btn"
-          onClick={onConnectWallet}
-          style={{
-            padding: "9px 16px",
-            borderRadius: "10px",
-            border: walletConnected ? "1px solid rgba(20,241,149,0.3)" : "1px solid var(--border-subtle)",
-            cursor: "pointer",
-            fontSize: "13px",
-            fontWeight: 600,
-            fontFamily: "Inter, sans-serif",
-            transition: "all 0.2s ease",
-            background: walletConnected ? "rgba(20,241,149,0.08)" : "rgba(255,255,255,0.04)",
-            color: walletConnected ? "var(--solana-green)" : "var(--text-secondary)",
-            display: "flex",
-            alignItems: "center",
-            gap: "7px",
-          }}
-        >
-          <span style={{ fontSize: "16px" }}>{walletConnected ? "👛" : "🔗"}</span>
-          {walletConnected ? "7x3k...9mPq" : "Connect Wallet"}
-        </button>
+        {/* Wallet button - using Solana Wallet Adapter */}
+        <div className="wallet-adapter-button-container">
+          {mounted && <WalletMultiButton />}
+        </div>
       </div>
+
+      <style jsx>{`
+        .wallet-adapter-button-container :global(.wallet-adapter-button) {
+          height: 38px !important;
+          padding: 0 16px !important;
+          border-radius: 10px !important;
+          font-size: 13px !important;
+          font-weight: 600 !important;
+          font-family: Inter, sans-serif !important;
+          background: ${wallet.connected ? "rgba(20,241,149,0.08)" : "rgba(255,255,255,0.04)"} !important;
+          border: 1px solid ${wallet.connected ? "rgba(20,241,149,0.3)" : "var(--border-subtle)"} !important;
+          color: ${wallet.connected ? "var(--solana-green)" : "var(--text-secondary)"} !important;
+        }
+        
+        .wallet-adapter-button-container :global(.wallet-adapter-button:hover) {
+          background: ${wallet.connected ? "rgba(20,241,149,0.15)" : "rgba(255,255,255,0.08)"} !important;
+        }
+      `}</style>
     </header>
   );
 }

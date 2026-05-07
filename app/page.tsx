@@ -1,374 +1,287 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import VoiceOrb from "@/components/VoiceOrb";
 import TransactionModal from "@/components/TransactionModal";
 import BalanceCard from "@/components/BalanceCard";
 import RecentTransactions from "@/components/RecentTransactions";
-import Header from "@/components/Header";
 import QuickCommands from "@/components/QuickCommands";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 
 export type AppView = "home" | "history" | "contacts";
 
 export default function Home() {
+  const { connection } = useConnection();
+  const { publicKey } = useWallet();
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [showModal, setShowModal] = useState(false);
-  const [pendingTx, setPendingTx] = useState<{
-    type: "send" | "bridge";
-    amount: string;
-    token: string;
-    recipient: string;
-    chain?: string;
-  } | null>(null);
   const [activeView, setActiveView] = useState<AppView>("home");
-  const [walletConnected, setWalletConnected] = useState(false);
   const [aiResponse, setAiResponse] = useState("");
   const [processingVoice, setProcessingVoice] = useState(false);
+  const [pendingTx, setPendingTx] = useState<any>(null);
 
-  // Simulated voice command parser
-  const parseVoiceCommand = (text: string) => {
-    const lower = text.toLowerCase();
+  // Command History for the UI
+  const [commandHistory, setCommandHistory] = useState<{text: string, isAi: boolean}[]>([]);
+
+  const parseVoiceCommand = async (text: string) => {
+    if (!text) return;
     setProcessingVoice(true);
-    setAiResponse("");
+    setCommandHistory(prev => [...prev, { text, isAi: false }]);
 
-    setTimeout(() => {
-      if (lower.includes("send") || lower.includes("transfer") || lower.includes("pay")) {
-        const amountMatch = text.match(/(\d+(?:\.\d+)?)/);
-        const tokenMatch = text.match(/\b(sol|usdc|usdt|eth)\b/i);
-        const toMatch = text.match(/to\s+(\w+)/i);
-        
+    try {
+      const { parseCommand } = await import("@/lib/ai/parser");
+      const result = await parseCommand(text);
+      
+      let finalResponse = result.response;
+
+      if (result.action === "transfer") {
         setPendingTx({
           type: "send",
-          amount: amountMatch ? amountMatch[1] : "10",
-          token: tokenMatch ? tokenMatch[1].toUpperCase() : "USDC",
-          recipient: toMatch ? toMatch[1] : "Alice",
+          amount: result.amount || "0",
+          token: result.token || "SOL",
+          recipient: result.recipient || "Unknown",
         });
-        setAiResponse(`Got it! I'll prepare a transfer of ${amountMatch ? amountMatch[1] : "10"} ${tokenMatch ? tokenMatch[1].toUpperCase() : "USDC"} to ${toMatch ? toMatch[1] : "Alice"}.`);
         setTimeout(() => setShowModal(true), 800);
-      } else if (lower.includes("bridge")) {
-        const amountMatch = text.match(/(\d+(?:\.\d+)?)/);
-        const tokenMatch = text.match(/\b(sol|usdc|usdt|eth)\b/i);
-        const fromMatch = text.match(/from\s+(\w+)/i);
-
+      } else if (result.action === "bridge") {
         setPendingTx({
           type: "bridge",
-          amount: amountMatch ? amountMatch[1] : "100",
-          token: tokenMatch ? tokenMatch[1].toUpperCase() : "USDC",
-          recipient: "Your Solana Wallet",
-          chain: fromMatch ? fromMatch[1] : "Ethereum",
+          amount: result.amount || "0",
+          token: result.token || "USDC",
+          recipient: publicKey?.toString() || "Your Solana Wallet",
+          chain: result.fromChain || "Ethereum",
         });
-        setAiResponse(`Preparing to bridge ${amountMatch ? amountMatch[1] : "100"} ${tokenMatch ? tokenMatch[1].toUpperCase() : "USDC"} from ${fromMatch ? fromMatch[1] : "Ethereum"} to Solana via LiFi.`);
         setTimeout(() => setShowModal(true), 800);
-      } else if (lower.includes("balance") || lower.includes("how much")) {
-        setAiResponse("Your current balance: 4.28 SOL ($523.40), 245.00 USDC, 0.012 ETH");
-      } else if (lower.includes("transaction") || lower.includes("history") || lower.includes("recent")) {
-        setAiResponse("Showing your recent transactions...");
+      } else if (result.action === "query_balance") {
+        try {
+          const { getSolBalance, getTokenBalances } = await import("@/lib/solana/wallet");
+          const sol = await getSolBalance(connection, publicKey!);
+          const tokens = await getTokenBalances(connection, publicKey!);
+          const usdc = tokens.find(t => t.symbol === "USDC")?.amount || "0";
+          finalResponse = `You have ${sol.toFixed(2)} SOL and ${usdc} USDC. Total value is roughly $${(sol * 122.5 + parseFloat(usdc)).toFixed(2)}.`;
+        } catch (e) {
+          finalResponse = "I couldn't fetch your live balance, but I've updated the display on the right.";
+        }
+      } else if (result.action === "query_history") {
         setActiveView("history");
-      } else {
-        setAiResponse("I heard you! Try saying 'Send 10 USDC to Alice', 'Bridge 100 USDC from Ethereum', or 'What's my balance?'");
+      } else if (result.action === "query_contacts") {
+        setActiveView("contacts");
       }
-      setProcessingVoice(false);
-    }, 1200);
-  };
 
-  const handleQuickCommand = (cmd: string) => {
-    setTranscript(cmd);
-    parseVoiceCommand(cmd);
+      setAiResponse(finalResponse);
+      setCommandHistory(prev => [...prev, { text: finalResponse, isAi: true }]);
+
+      // Voice Feedback
+      try {
+        const { textToSpeech } = await import("@/lib/ai/speech");
+        const audioBase64 = await textToSpeech(finalResponse);
+        if (audioBase64) {
+          const audio = new Audio(`data:audio/mpeg;base64,${audioBase64}`);
+          audio.play();
+        }
+      } catch (e) { console.error(e); }
+
+    } catch (error) {
+      setAiResponse("Something went wrong processing that.");
+    } finally {
+      setProcessingVoice(false);
+    }
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "var(--bg-primary)",
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      {/* Ambient background orbs */}
-      <div
-        style={{
-          position: "fixed",
-          top: "-20%",
-          right: "-10%",
-          width: "600px",
-          height: "600px",
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(153,69,255,0.12) 0%, transparent 70%)",
-          pointerEvents: "none",
-          zIndex: 0,
-        }}
-      />
-      <div
-        style={{
-          position: "fixed",
-          bottom: "-10%",
-          left: "-10%",
-          width: "500px",
-          height: "500px",
-          borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(20,241,149,0.1) 0%, transparent 70%)",
-          pointerEvents: "none",
-          zIndex: 0,
-        }}
-      />
+    <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg-primary)", color: "#fff" }}>
+      {/* 1. Futuristic Sidebar */}
+      <aside className="glass" style={{ 
+        width: "280px", 
+        borderRight: "1px solid var(--border-subtle)", 
+        display: "flex", 
+        flexDirection: "column",
+        padding: "32px 20px",
+        gap: "40px",
+        position: "sticky",
+        top: 0,
+        height: "100vh"
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ width: "40px", height: "40px", borderRadius: "12px", background: "linear-gradient(135deg, var(--solana-green), var(--solana-purple))", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px" }}>⚡</div>
+          <h1 className="font-display" style={{ fontSize: "20px", fontWeight: 700, letterSpacing: "-0.5px" }}>SpeakPay</h1>
+        </div>
 
-      <div style={{ position: "relative", zIndex: 1 }}>
-        <Header
-          walletConnected={walletConnected}
-          onConnectWallet={() => setWalletConnected(!walletConnected)}
-          activeView={activeView}
-          setActiveView={setActiveView}
-        />
+        <nav style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <NavBtn active={activeView === "home"} onClick={() => setActiveView("home")} icon="🎙️" label="Assistant" />
+          <NavBtn active={activeView === "history"} onClick={() => setActiveView("history")} icon="📋" label="Activity" />
+          <NavBtn active={activeView === "contacts"} onClick={() => setActiveView("contacts")} icon="👤" label="Contacts" />
+        </nav>
 
-        <main
-          style={{
-            maxWidth: "1100px",
-            margin: "0 auto",
-            padding: "24px 20px 80px",
-          }}
-        >
+        <div style={{ marginTop: "auto" }}>
+          <BalanceCard />
+        </div>
+      </aside>
+
+      {/* 2. Main Content Stage */}
+      <main style={{ flex: 1, position: "relative", overflowY: "auto", padding: "40px" }}>
+        <div style={{ maxWidth: "900px", margin: "0 auto", width: "100%" }}>
+          {/* Mobile-only Balance Display */}
+          <div className="mobile-only" style={{ marginBottom: "24px" }}>
+            <BalanceCard />
+          </div>
+
           {activeView === "home" && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 340px",
-                gap: "24px",
-                alignItems: "start",
-              }}
-              className="main-grid"
-            >
-              {/* Left column */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-                {/* Voice section */}
-                <div
-                  style={{
-                    borderRadius: "24px",
-                    padding: "48px 40px",
-                    textAlign: "center",
-                    position: "relative",
-                    overflow: "hidden",
-                  }}
-                  className="glass"
-                >
-                  {/* Card inner glow */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      width: "200px",
-                      height: "1px",
-                      background: "linear-gradient(90deg, transparent, var(--solana-green), transparent)",
-                    }}
-                  />
-
-                  <p
-                    style={{
-                      fontSize: "13px",
-                      fontWeight: 600,
-                      letterSpacing: "0.12em",
-                      color: "var(--solana-green)",
-                      textTransform: "uppercase",
-                      marginBottom: "12px",
-                    }}
-                  >
-                    Voice Interface
-                  </p>
-                  <h1
-                    className="font-display gradient-text"
-                    style={{ fontSize: "clamp(28px, 4vw, 42px)", fontWeight: 700, lineHeight: 1.2, marginBottom: "8px" }}
-                  >
-                    Just Speak Your Intent
-                  </h1>
-                  <p style={{ color: "var(--text-secondary)", fontSize: "16px", marginBottom: "40px" }}>
-                    AI handles the rest — payments, bridging, queries
-                  </p>
-
-                  <VoiceOrb
-                    isListening={isListening}
-                    onToggle={setIsListening}
-                    onTranscript={(t) => {
-                      setTranscript(t);
-                      parseVoiceCommand(t);
-                    }}
-                    processing={processingVoice}
-                  />
-
-                  {/* Transcript display */}
-                  {transcript && (
-                    <div
-                      style={{
-                        marginTop: "28px",
-                        padding: "16px 20px",
-                        borderRadius: "14px",
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid rgba(255,255,255,0.07)",
-                        textAlign: "left",
-                      }}
-                      className="animate-fade-in"
-                    >
-                      <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "6px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                        🎤 You said
-                      </p>
-                      <p style={{ color: "var(--text-primary)", fontSize: "16px", fontStyle: "italic" }}>
-                        "{transcript}"
-                      </p>
-                    </div>
-                  )}
-
-                  {/* AI Response */}
-                  {(aiResponse || processingVoice) && (
-                    <div
-                      style={{
-                        marginTop: "12px",
-                        padding: "16px 20px",
-                        borderRadius: "14px",
-                        background: "rgba(20, 241, 149, 0.06)",
-                        border: "1px solid rgba(20, 241, 149, 0.15)",
-                        textAlign: "left",
-                      }}
-                      className="animate-fade-in"
-                    >
-                      <p style={{ fontSize: "12px", color: "var(--solana-green)", marginBottom: "6px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                        🤖 AI Agent
-                      </p>
-                      {processingVoice ? (
-                        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                          {[0, 1, 2].map((i) => (
-                            <div
-                              key={i}
-                              style={{
-                                width: "8px",
-                                height: "8px",
-                                borderRadius: "50%",
-                                background: "var(--solana-green)",
-                                animation: `blink 1.2s ${i * 0.2}s infinite`,
-                                opacity: 0.7,
-                              }}
-                            />
-                          ))}
-                        </div>
-                      ) : (
-                        <p style={{ color: "var(--text-primary)", fontSize: "15px" }}>{aiResponse}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Quick Commands */}
-                <QuickCommands onSelect={handleQuickCommand} />
+            <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "40px", alignItems: "center" }}>
+              
+              {/* The "Stage" */}
+              <div style={{ textAlign: "center", marginTop: "40px" }}>
+                <h2 className="font-display gradient-text" style={{ fontSize: "48px", fontWeight: 800, marginBottom: "16px" }}>How can I help?</h2>
+                <p style={{ color: "var(--text-secondary)", fontSize: "18px" }}>Voice-activated payments and bridging on Solana.</p>
               </div>
 
-              {/* Right column */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-                <BalanceCard walletConnected={walletConnected} />
-                <RecentTransactions compact />
+              <VoiceOrb 
+                isListening={isListening} 
+                onToggle={setIsListening} 
+                onTranscript={parseVoiceCommand} 
+                processing={processingVoice} 
+              />
+
+              {/* Chat-style Command History */}
+              <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "16px", marginTop: "20px" }}>
+                {commandHistory.slice(-3).map((item, i) => (
+                  <div key={i} className="glass animate-float-up" style={{ 
+                    padding: "16px 24px", 
+                    borderRadius: "18px",
+                    alignSelf: item.isAi ? "flex-start" : "flex-end",
+                    maxWidth: "80%",
+                    border: item.isAi ? "1px solid rgba(20,241,149,0.2)" : "1px solid rgba(255,255,255,0.1)",
+                    background: item.isAi ? "rgba(20,241,149,0.05)" : "rgba(255,255,255,0.03)"
+                  }}>
+                    <p style={{ fontSize: "12px", color: item.isAi ? "var(--solana-green)" : "var(--text-muted)", marginBottom: "4px", fontWeight: 700 }}>{item.isAi ? "ASSISTANT" : "YOU"}</p>
+                    <p style={{ fontSize: "16px", lineHeight: 1.5 }}>{item.text}</p>
+                  </div>
+                ))}
               </div>
+
+              <QuickCommands onSelect={parseVoiceCommand} />
             </div>
           )}
 
           {activeView === "history" && (
             <div className="animate-fade-in">
-              <h2
-                className="font-display"
-                style={{ fontSize: "24px", fontWeight: 700, marginBottom: "20px", color: "var(--text-primary)" }}
-              >
-                Transaction History
-              </h2>
+              <h2 className="font-display" style={{ fontSize: "32px", fontWeight: 700, marginBottom: "32px" }}>Transaction Activity</h2>
               <RecentTransactions compact={false} />
             </div>
           )}
 
           {activeView === "contacts" && (
             <div className="animate-fade-in">
-              <h2
-                className="font-display"
-                style={{ fontSize: "24px", fontWeight: 700, marginBottom: "20px", color: "var(--text-primary)" }}
-              >
-                Contacts
-              </h2>
-              <ContactsView />
+              <h2 className="font-display" style={{ fontSize: "32px", fontWeight: 700, marginBottom: "32px" }}>Your Contacts</h2>
+              <ContactsView onSend={(name) => parseVoiceCommand(`Send to ${name}`)} />
             </div>
           )}
-        </main>
-      </div>
+        </div>
+      </main>
 
+      {/* 3. Global Modals */}
       {showModal && pendingTx && (
         <TransactionModal
           tx={pendingTx}
           onConfirm={() => {
             setShowModal(false);
-            setAiResponse("✅ Transaction submitted successfully! Awaiting confirmation on Solana...");
+            setAiResponse("Transaction submitted!");
           }}
-          onCancel={() => {
-            setShowModal(false);
-            setAiResponse("Transaction cancelled.");
-          }}
+          onCancel={() => setShowModal(false)}
         />
       )}
 
       <style jsx>{`
-        @media (max-width: 768px) {
-          .main-grid {
-            grid-template-columns: 1fr !important;
-          }
+        .mobile-only { display: none; }
+        @media (max-width: 1024px) {
+          aside { display: none !important; }
+          .mobile-only { display: block; }
+          main { padding: 20px !important; }
         }
       `}</style>
     </div>
   );
 }
 
-function ContactsView() {
-  const contacts = [
-    { name: "Alice", address: "7x3kN...9mPq", avatar: "🧑" },
-    { name: "Sarah", address: "Ht9pL...4rKq", avatar: "👩" },
-    { name: "John", address: "BcD3m...7sNp", avatar: "🧔" },
-    { name: "Mom", address: "9xKqL...2mRt", avatar: "👵" },
-  ];
+function NavBtn({ active, onClick, icon, label }: any) {
+  return (
+    <button onClick={onClick} style={{
+      display: "flex",
+      alignItems: "center",
+      gap: "12px",
+      padding: "12px 16px",
+      borderRadius: "12px",
+      background: active ? "rgba(20,241,149,0.1)" : "transparent",
+      color: active ? "var(--solana-green)" : "var(--text-secondary)",
+      border: "none",
+      cursor: "pointer",
+      fontSize: "15px",
+      fontWeight: 600,
+      transition: "all 0.2s ease",
+      textAlign: "left"
+    }}>
+      <span style={{ fontSize: "18px" }}>{icon}</span>
+      {label}
+    </button>
+  );
+}
+
+interface ContactsViewProps {
+  onSend: (name: string) => void;
+}
+
+function ContactsView({ onSend }: ContactsViewProps) {
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newAddress, setNewAddress] = useState("");
+
+  const load = () => import("@/lib/solana/contacts").then(m => setContacts(m.getContacts()));
+  
+  useEffect(() => { load(); }, []);
+
+  const handleAdd = async (e: any) => {
+    e.preventDefault();
+    const m = await import("@/lib/solana/contacts");
+    m.addContact({ name: newName, address: newAddress });
+    setNewName(""); setNewAddress(""); setShowAdd(false);
+    load();
+  };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-      {contacts.map((c) => (
-        <div
-          key={c.name}
-          className="glass glass-hover"
-          style={{
-            borderRadius: "16px",
-            padding: "18px 20px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            cursor: "pointer",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-            <div
-              style={{
-                width: "44px",
-                height: "44px",
-                borderRadius: "12px",
-                background: "rgba(20,241,149,0.1)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "22px",
-              }}
-            >
-              {c.avatar}
-            </div>
-            <div>
-              <p style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: "15px" }}>{c.name}</p>
-              <p style={{ color: "var(--text-muted)", fontSize: "13px", fontFamily: "monospace" }}>{c.address}</p>
-            </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={() => setShowAdd(!showAdd)} className="btn-primary" style={{ padding: "10px 20px" }}>
+          {showAdd ? "Cancel" : "+ Add New Contact"}
+        </button>
+      </div>
+
+      {showAdd && (
+        <form onSubmit={handleAdd} className="glass animate-float-up" style={{ padding: "32px", borderRadius: "24px", display: "flex", gap: "16px", alignItems: "flex-end" }}>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 700 }}>NAME</p>
+            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Alice" style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", padding: "12px", borderRadius: "12px", color: "#fff" }} />
           </div>
-          <button className="btn-primary" style={{ padding: "8px 16px", fontSize: "13px", borderRadius: "8px" }}>
-            Send
-          </button>
-        </div>
-      ))}
+          <div style={{ flex: 2 }}>
+            <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 700 }}>SOLANA ADDRESS</p>
+            <input value={newAddress} onChange={e => setNewAddress(e.target.value)} placeholder="Enter address..." style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", padding: "12px", borderRadius: "12px", color: "#fff" }} />
+          </div>
+          <button type="submit" className="btn-primary" style={{ padding: "12px 24px" }}>Save</button>
+        </form>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "20px" }}>
+        {contacts.map(c => (
+          <div key={c.name} className="glass glass-hover" style={{ padding: "24px", borderRadius: "20px", display: "flex", alignItems: "center", gap: "16px" }}>
+            <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "rgba(255,255,255,0.05)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px" }}>👤</div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontWeight: 700, fontSize: "17px" }}>{c.name}</p>
+              <p style={{ color: "var(--text-muted)", fontSize: "13px" }}>{c.address.slice(0, 4)}...{c.address.slice(-4)}</p>
+            </div>
+            <button onClick={() => onSend(c.name)} className="btn-primary" style={{ padding: "8px 12px", borderRadius: "10px" }}>Send</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

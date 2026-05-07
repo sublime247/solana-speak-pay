@@ -5,12 +5,12 @@ interface QuickCommandsProps {
 }
 
 const COMMANDS = [
-  { label: "Send USDC", cmd: "Send 10 USDC to Alice", icon: "💸", color: "#14f195" },
-  { label: "Check Balance", cmd: "What's my balance?", icon: "💰", color: "#9945ff" },
-  { label: "Bridge ETH", cmd: "Bridge 100 USDC from Ethereum", icon: "🌉", color: "#4da8ff" },
-  { label: "Transactions", cmd: "Show my recent transactions", icon: "📋", color: "#ff9f43" },
-  { label: "Send SOL", cmd: "Transfer 5 SOL to Sarah", icon: "◎", color: "#a29bfe" },
-  { label: "Add Contact", cmd: "Save this address as John", icon: "👤", color: "#fd79a8" },
+  { label: "Send SOL", cmd: "I want to send some SOL", icon: "◎", color: "#14f195" },
+  { label: "Check Balance", cmd: "What's my current balance?", icon: "💰", color: "#9945ff" },
+  { label: "Bridge Funds", cmd: "Bridge USDC from Ethereum", icon: "🌉", color: "#4da8ff" },
+  { label: "Recent Activity", cmd: "Show my recent transactions", icon: "📋", color: "#ff9f43" },
+  { label: "Send USDC", cmd: "Send USDC to a friend", icon: "💸", color: "#a29bfe" },
+  { label: "Manage Contacts", cmd: "Show my contacts", icon: "👤", color: "#fd79a8" },
 ];
 
 export default function QuickCommands({ onSelect }: QuickCommandsProps) {

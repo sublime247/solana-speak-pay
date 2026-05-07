@@ -57,47 +57,40 @@ export default function VoiceOrb({ isListening, onToggle, onTranscript, processi
       // Stop listening
       onToggle(false);
       recognitionRef.current?.stop();
-
-      // Demo: simulate a recognized command
-      const cmd = DEMO_COMMANDS[demoIndexRef.current % DEMO_COMMANDS.length];
-      demoIndexRef.current++;
-      setTimeout(() => onTranscript(cmd), 300);
     } else {
       // Start listening
       onToggle(true);
 
-      // Try real Web Speech API first
+      // Try real Web Speech API
       if ("SpeechRecognition" in window || "webkitSpeechRecognition" in window) {
-        const SR = (window as typeof window & { SpeechRecognition?: typeof SpeechRecognition; webkitSpeechRecognition?: typeof SpeechRecognition }).SpeechRecognition || (window as typeof window & { webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition;
+        const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (SR) {
           const recognition = new SR();
           recognition.continuous = false;
           recognition.interimResults = false;
           recognition.lang = "en-US";
+          
           recognition.onresult = (e: any) => {
             const text = e.results[0][0].transcript;
             onToggle(false);
             onTranscript(text);
           };
-          recognition.onerror = () => {
+          
+          recognition.onerror = (e: any) => {
+            console.error("Speech Recognition Error:", e.error);
             onToggle(false);
-            // Fallback to demo
-            const cmd = DEMO_COMMANDS[demoIndexRef.current % DEMO_COMMANDS.length];
-            demoIndexRef.current++;
-            onTranscript(cmd);
+            if (e.error === 'no-speech') {
+              onTranscript(""); // Don't guess, just clear
+            }
           };
+          
           recognition.onend = () => onToggle(false);
           recognition.start();
           recognitionRef.current = recognition;
         }
       } else {
-        // Demo mode — auto-stop after 2.5s
-        setTimeout(() => {
-          onToggle(false);
-          const cmd = DEMO_COMMANDS[demoIndexRef.current % DEMO_COMMANDS.length];
-          demoIndexRef.current++;
-          onTranscript(cmd);
-        }, 2500);
+        alert("Your browser does not support voice recognition. Please try Chrome.");
+        onToggle(false);
       }
     }
   };
@@ -151,6 +144,7 @@ export default function VoiceOrb({ isListening, onToggle, onTranscript, processi
               : "0 0 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)",
             transition: "all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
             transform: isListening ? "scale(1.08)" : "scale(1)",
+            animation: processing ? "pulse-glow 1.5s ease-in-out infinite" : "none",
           }}
           aria-label={isListening ? "Stop listening" : "Start voice command"}
         >

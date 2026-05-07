@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSendTransaction } from "@/lib/solana/useSendTransaction";
+import { useWallet } from "@solana/wallet-adapter-react";
 
 interface Tx {
   type: "send" | "bridge";
@@ -12,7 +14,7 @@ interface Tx {
 
 interface TransactionModalProps {
   tx: Tx;
-  onConfirm: () => void;
+  onConfirm: (signature?: string) => void;
   onCancel: () => void;
 }
 
@@ -25,15 +27,83 @@ const MOCK_RATE_USD: Record<string, number> = {
 };
 
 export default function TransactionModal({ tx, onConfirm, onCancel }: TransactionModalProps) {
-  const [step, setStep] = useState<"review" | "signing" | "done">("review");
+  const [step, setStep] = useState<"review" | "signing" | "done" | "error">("review");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [signature, setSignature] = useState("");
+  const { send, loading, error } = useSendTransaction();
+  const { connected } = useWallet();
+  
   const usdValue = (parseFloat(tx.amount) * (MOCK_RATE_USD[tx.token] ?? 1)).toFixed(2);
 
-  const handleConfirm = () => {
+  const [bridgeQuote, setBridgeQuote] = useState<any>(null);
+
+  useEffect(() => {
+    if (tx.type === "bridge") {
+      const fetchQuote = async () => {
+        try {
+          const { getBridgeQuote } = await import("@/lib/lifi/bridge");
+          const quote = await getBridgeQuote({
+            fromChain: tx.chain || "Ethereum",
+            fromToken: tx.token,
+            toAmount: tx.amount,
+            toAddress: tx.recipient,
+          });
+          if (quote) {
+            setBridgeQuote(quote);
+          }
+        } catch (e) {
+          console.error("Failed to fetch bridge quote", e);
+        }
+      };
+      fetchQuote();
+    }
+  }, [tx]);
+
+  const handleConfirm = async () => {
+    if (!connected) {
+      setErrorMsg("Please connect your wallet first");
+      setStep("error");
+      return;
+    }
+
+    if (tx.type === "bridge") {
+      setStep("signing");
+      try {
+        // Here we would use the LiFi SDK to execute the cross-chain transaction
+        // This requires an EVM signer (from Phantom or MetaMask)
+        // For the demo, we'll simulate the execution but use real quote data
+        setTimeout(() => {
+          setStep("done");
+          onConfirm();
+        }, 3000);
+      } catch (err: any) {
+        setErrorMsg(err.message || "Bridge failed");
+        setStep("error");
+      }
+      return;
+    }
+
     setStep("signing");
-    setTimeout(() => {
-      setStep("done");
-      setTimeout(onConfirm, 1500);
-    }, 2000);
+    
+    try {
+      const txSignature = await send({
+        recipient: tx.recipient,
+        amount: parseFloat(tx.amount),
+        token: tx.token as "SOL" | "USDC" | "USDT",
+      });
+
+      if (txSignature) {
+        setSignature(txSignature);
+        setStep("done");
+        setTimeout(() => onConfirm(txSignature), 1500);
+      } else {
+        setErrorMsg(error || "Transaction failed");
+        setStep("error");
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || "Transaction failed");
+      setStep("error");
+    }
   };
 
   // Close on backdrop click
@@ -160,9 +230,15 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "24px" }}>
               <DetailRow label={tx.type === "bridge" ? "From Chain" : "To"} value={tx.type === "bridge" ? (tx.chain ?? "Ethereum") : tx.recipient} />
               {tx.type === "bridge" && <DetailRow label="To Chain" value="Solana" />}
-              {tx.type === "bridge" && <DetailRow label="Protocol" value="LiFi Protocol" highlight />}
-              <DetailRow label="Network Fee" value={`${MOCK_FEE} SOL`} />
-              <DetailRow label="Estimated Time" value={tx.type === "bridge" ? "2–5 minutes" : "~1 second"} />
+              {tx.type === "bridge" && <DetailRow label="Protocol" value={bridgeQuote?.toolDetails?.name || "LiFi Protocol"} highlight />}
+              <DetailRow 
+                label="Network Fee" 
+                value={bridgeQuote ? `$${parseFloat(bridgeQuote.estimate.feeCosts[0]?.amountUsd || "0").toFixed(2)}` : `${MOCK_FEE} SOL`} 
+              />
+              <DetailRow 
+                label="Estimated Time" 
+                value={bridgeQuote ? `${Math.ceil(bridgeQuote.estimate.executionDuration / 60)} minutes` : (tx.type === "bridge" ? "2–5 minutes" : "~1 second")} 
+              />
             </div>
 
             {/* Warning */}
@@ -199,8 +275,9 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
                 onClick={handleConfirm}
                 className="btn-primary"
                 style={{ flex: 2, fontSize: "15px" }}
+                disabled={loading}
               >
-                Confirm &amp; Sign
+                {loading ? "Processing..." : "Confirm & Sign"}
               </button>
             </div>
           </>
@@ -250,9 +327,56 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
             <p className="font-display" style={{ fontSize: "20px", fontWeight: 700, color: "var(--solana-green)", marginBottom: "8px" }}>
               Transaction Sent!
             </p>
-            <p style={{ color: "var(--text-secondary)", fontSize: "14px" }}>
+            <p style={{ color: "var(--text-secondary)", fontSize: "14px", marginBottom: "12px" }}>
               Awaiting network confirmation...
             </p>
+            {signature && (
+              <a
+                href={`https://explorer.solana.com/tx/${signature}?cluster=devnet`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontSize: "12px",
+                  color: "var(--accent-blue)",
+                  textDecoration: "underline",
+                }}
+              >
+                View on Explorer
+              </a>
+            )}
+          </div>
+        )}
+
+        {step === "error" && (
+          <div style={{ textAlign: "center", padding: "20px 0" }} className="animate-fade-in">
+            <div
+              style={{
+                width: "72px",
+                height: "72px",
+                borderRadius: "50%",
+                background: "rgba(255,107,107,0.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 24px",
+                fontSize: "36px",
+              }}
+            >
+              ❌
+            </div>
+            <p className="font-display" style={{ fontSize: "20px", fontWeight: 700, color: "#ff6b6b", marginBottom: "8px" }}>
+              Transaction Failed
+            </p>
+            <p style={{ color: "var(--text-secondary)", fontSize: "14px", marginBottom: "20px" }}>
+              {errorMsg}
+            </p>
+            <button
+              onClick={onCancel}
+              className="btn-primary"
+              style={{ width: "100%" }}
+            >
+              Close
+            </button>
           </div>
         )}
       </div>

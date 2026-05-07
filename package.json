@@ -9,15 +9,28 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "next": "16.2.4",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "@elevenlabs/elevenlabs-js": "^2.45.0",
+    "@lifi/sdk": "^3.16.3",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/wallet-adapter-base": "^0.9.27",
+    "@solana/wallet-adapter-phantom": "^0.9.29",
+    "@solana/wallet-adapter-react": "^0.15.39",
+    "@solana/wallet-adapter-react-ui": "^0.9.39",
+    "@solana/wallet-adapter-solflare": "^0.6.33",
+    "@solana/web3.js": "^1.98.4",
+    "buffer": "^6.0.3",
+    "elevenlabs": "^1.59.0",
+    "next": "^15.5.15",
+    "openai": "^6.36.0",
+    "process": "^0.11.10",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
