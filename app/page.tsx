@@ -19,9 +19,11 @@ export default function Home() {
   const [activeView, setActiveView] = useState<AppView>("home");
   const [processingVoice, setProcessingVoice] = useState(false);
   const [pendingTx, setPendingTx] = useState<any>(null);
+  const [confirmingTx, setConfirmingTx] = useState<any>(null);
+  const [inputMode, setInputMode] = useState<"voice" | "manual">("voice");
 
   // Command History for the UI
-  const [commandHistory, setCommandHistory] = useState<{text: string, isAi: boolean}[]>([]);
+  const [commandHistory, setCommandHistory] = useState<{ text: string, isAi: boolean }[]>([]);
 
   const parseVoiceCommand = async (text: string) => {
     if (!text) return;
@@ -29,19 +31,58 @@ export default function Home() {
     setCommandHistory(prev => [...prev, { text, isAi: false }]);
 
     try {
+      // 0. Handle Confirmation Response
+      if (confirmingTx && (text.toLowerCase().includes("yes") || text.toLowerCase().includes("proceed") || text.toLowerCase().includes("correct"))) {
+        setPendingTx(confirmingTx);
+        setConfirmingTx(null);
+        setCommandHistory(prev => [...prev, { text: "Confirmed. Opening the transaction review...", isAi: true }]);
+        setTimeout(() => setShowModal(true), 500);
+        setProcessingVoice(false);
+        return;
+      } else if (confirmingTx) {
+        // If they said something else, cancel the pending one
+        setConfirmingTx(null);
+      }
+
       const { parseCommand } = await import("@/lib/ai/parser");
       const result = await parseCommand(text);
-      
+
       let finalResponse = result.response;
 
       if (result.action === "transfer") {
-        setPendingTx({
+        let actualRecipient = result.recipient || "Unknown";
+        let displayRecipient = result.recipient || "Unknown";
+        
+        // Resolve SNS if needed
+        if (actualRecipient.endsWith(".sol")) {
+          setProcessingVoice(true);
+          try {
+            const { resolveSNS } = await import("@/lib/solana/sns");
+            const resolved = await resolveSNS(connection, actualRecipient);
+            if (resolved) {
+              displayRecipient = actualRecipient; 
+              actualRecipient = resolved; 
+              finalResponse = `I've resolved ${displayRecipient} to a Solana address. Setting up the transfer now.`;
+            } else {
+              finalResponse = `I couldn't resolve the domain ${actualRecipient}. Please check if it's correct.`;
+              setCommandHistory(prev => [...prev, { text: finalResponse, isAi: true }]);
+              setProcessingVoice(false);
+              return;
+            }
+          } catch (e) {
+            console.error("SNS Resolution failed", e);
+          }
+        }
+
+        setConfirmingTx({
           type: "send",
           amount: result.amount || "0",
           token: result.token || "SOL",
-          recipient: result.recipient || "Unknown",
+          recipient: actualRecipient,
+          recipientDisplay: displayRecipient,
+          transcript: text,
         });
-        setTimeout(() => setShowModal(true), 800);
+        // We DON'T show the modal yet. We wait for confirmation.
       } else if (result.action === "bridge") {
         setPendingTx({
           type: "bridge",
@@ -93,10 +134,10 @@ export default function Home() {
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "var(--bg-primary)", color: "#fff" }}>
       {/* 1. Futuristic Sidebar */}
-      <aside className="glass" style={{ 
-        width: "280px", 
-        borderRight: "1px solid var(--border-subtle)", 
-        display: "flex", 
+      <aside className="glass" style={{
+        width: "280px",
+        borderRight: "1px solid var(--border-subtle)",
+        display: "flex",
         flexDirection: "column",
         padding: "32px 20px",
         gap: "40px",
@@ -130,38 +171,125 @@ export default function Home() {
 
           {activeView === "home" && (
             <div className="animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "40px", alignItems: "center" }}>
-              
-              {/* The \"Stage\" */}
               <div style={{ textAlign: "center", marginTop: "40px" }}>
-                <h2 className="font-display gradient-text" style={{ fontSize: "48px", fontWeight: 800, marginBottom: "16px" }}>How can I help?</h2>
-                <p style={{ color: "var(--text-secondary)", fontSize: "18px" }}>Voice-activated payments and bridging on Solana.</p>
+                <h2 className="font-display gradient-text" style={{ fontSize: "48px", fontWeight: 800, marginBottom: "16px" }}>{inputMode === "voice" ? "How can I help?" : "Send Payment"}</h2>
+                <p style={{ color: "var(--text-secondary)", fontSize: "18px" }}>{inputMode === "voice" ? "Voice-activated payments and bridging on Solana." : "Enter details manually to set up a transaction."}</p>
               </div>
 
-              <VoiceOrb 
-                isListening={isListening} 
-                onToggle={setIsListening} 
-                onTranscript={parseVoiceCommand} 
-                processing={processingVoice} 
-              />
+              {/* Mode Toggle */}
+              <div className="glass" style={{ display: "flex", padding: "4px", borderRadius: "14px", marginBottom: "10px" }}>
+                <button 
+                  onClick={() => setInputMode("voice")}
+                  style={{ 
+                    padding: "10px 24px", 
+                    borderRadius: "10px", 
+                    background: inputMode === "voice" ? "rgba(20,241,149,0.15)" : "transparent",
+                    color: inputMode === "voice" ? "var(--solana-green)" : "var(--text-muted)",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    transition: "all 0.2s"
+                  }}
+                >
+                  🎙️ Voice
+                </button>
+                <button 
+                  onClick={() => setInputMode("manual")}
+                  style={{ 
+                    padding: "10px 24px", 
+                    borderRadius: "10px", 
+                    background: inputMode === "manual" ? "rgba(20,241,149,0.15)" : "transparent",
+                    color: inputMode === "manual" ? "var(--solana-green)" : "var(--text-muted)",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    transition: "all 0.2s"
+                  }}
+                >
+                  ⌨️ Type
+                </button>
+              </div>
 
-              {/* Chat-style Command History */}
-              <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "16px", marginTop: "20px" }}>
-                {commandHistory.slice(-3).map((item, i) => (
-                  <div key={i} className="glass animate-float-up" style={{ 
-                    padding: "16px 24px", 
-                    borderRadius: "18px",
-                    alignSelf: item.isAi ? "flex-start" : "flex-end",
-                    maxWidth: "80%",
-                    border: item.isAi ? "1px solid rgba(20,241,149,0.2)" : "1px solid rgba(255,255,255,0.1)",
-                    background: item.isAi ? "rgba(20,241,149,0.05)" : "rgba(255,255,255,0.03)"
-                  }}>
-                    <p style={{ fontSize: "12px", color: item.isAi ? "var(--solana-green)" : "var(--text-muted)", marginBottom: "4px", fontWeight: 700 }}>{item.isAi ? "ASSISTANT" : "YOU"}</p>
-                    <p style={{ fontSize: "16px", lineHeight: 1.5 }}>{item.text}</p>
+              {inputMode === "voice" ? (
+                <>
+                  <VoiceOrb 
+                    isListening={isListening} 
+                    onToggle={setIsListening} 
+                    onTranscript={parseVoiceCommand} 
+                    processing={processingVoice} 
+                  />
+
+                  {/* Chat-style Command History */}
+                  <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "16px", marginTop: "20px" }}>
+                    {commandHistory.slice(-3).map((item, i) => (
+                      <div key={i} className="glass animate-float-up" style={{ 
+                        padding: "16px 24px", 
+                        borderRadius: "18px",
+                        alignSelf: item.isAi ? "flex-start" : "flex-end",
+                        maxWidth: "80%",
+                        border: item.isAi ? "1px solid rgba(20,241,149,0.2)" : "1px solid rgba(255,255,255,0.1)",
+                        background: item.isAi ? "rgba(20,241,149,0.05)" : "rgba(255,255,255,0.03)"
+                      }}>
+                        <p style={{ fontSize: "12px", color: item.isAi ? "var(--solana-green)" : "var(--text-muted)", marginBottom: "4px", fontWeight: 700 }}>{item.isAi ? "ASSISTANT" : "YOU"}</p>
+                        <p style={{ fontSize: "16px", lineHeight: 1.5 }}>{item.text}</p>
+                        
+                        {/* If this is the latest AI message and we are confirming, show buttons */}
+                        {item.isAi && i === commandHistory.length - 1 && confirmingTx && (
+                          <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
+                            <button 
+                              onClick={() => {
+                                setPendingTx(confirmingTx);
+                                setConfirmingTx(null);
+                                setShowModal(true);
+                              }}
+                              className="btn-primary" 
+                              style={{ padding: "8px 16px", fontSize: "13px", borderRadius: "8px" }}
+                            >
+                              Yes, Proceed
+                            </button>
+                            <button 
+                              onClick={() => setConfirmingTx(null)}
+                              style={{ padding: "8px 16px", fontSize: "13px", borderRadius: "8px", background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", cursor: "pointer" }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              <QuickCommands onSelect={parseVoiceCommand} />
+                  <QuickCommands onSelect={parseVoiceCommand} />
+                </>
+              ) : (
+                <div style={{ width: "100%", maxWidth: "500px" }}>
+                  <ManualTransferForm onTransfer={(data) => {
+                    if (data.recipient.endsWith(".sol")) {
+                      const transcript = `Manual transfer of ${data.amount} ${data.token} to ${data.recipient}`;
+                      setPendingTx({
+                        type: "send",
+                        amount: data.amount,
+                        token: data.token,
+                        recipient: data.recipient,
+                        recipientDisplay: data.recipient,
+                        transcript: transcript
+                      });
+                      setShowModal(true);
+                    } else {
+                      setPendingTx({
+                        type: "send",
+                        amount: data.amount,
+                        token: data.token,
+                        recipient: data.recipient,
+                        transcript: "Manual Transfer"
+                      });
+                      setShowModal(true);
+                    }
+                  }} />
+                </div>
+              )}
             </div>
           )}
 
@@ -252,7 +380,7 @@ function ContactsView({ onSend }: ContactsViewProps) {
   const [newAddress, setNewAddress] = useState("");
 
   const load = () => import("@/lib/solana/contacts").then(m => setContacts(m.getContacts()));
-  
+
   useEffect(() => { load(); }, []);
 
   const handleAdd = async (e: any) => {
@@ -298,5 +426,61 @@ function ContactsView({ onSend }: ContactsViewProps) {
         ))}
       </div>
     </div>
+  );
+}
+function ManualTransferForm({ onTransfer }: { onTransfer: (data: any) => void }) {
+  const [recipient, setRecipient] = useState("");
+  const [amount, setAmount] = useState("");
+  const [token, setToken] = useState("SOL");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recipient || !amount) return;
+    onTransfer({ recipient, amount, token });
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="glass animate-float-up" style={{ padding: "32px", borderRadius: "24px", display: "flex", flexDirection: "column", gap: "24px" }}>
+      <div style={{ display: "flex", gap: "20px" }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 700 }}>RECIPIENT ADDRESS OR .SOL</p>
+          <input 
+            value={recipient} 
+            onChange={e => setRecipient(e.target.value)} 
+            placeholder="Address or name.sol" 
+            style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", padding: "14px", borderRadius: "12px", color: "#fff", fontSize: "16px" }} 
+          />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: "20px" }}>
+        <div style={{ flex: 1 }}>
+          <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 700 }}>AMOUNT</p>
+          <input 
+            type="number"
+            step="0.01"
+            value={amount} 
+            onChange={e => setAmount(e.target.value)} 
+            placeholder="0.00" 
+            style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", padding: "14px", borderRadius: "12px", color: "#fff", fontSize: "16px" }} 
+          />
+        </div>
+        <div style={{ width: "120px" }}>
+          <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "8px", fontWeight: 700 }}>TOKEN</p>
+          <select 
+            value={token}
+            onChange={e => setToken(e.target.value)}
+            style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border-subtle)", padding: "14px", borderRadius: "12px", color: "#fff", fontSize: "16px" }}
+          >
+            <option value="SOL">SOL</option>
+            <option value="USDC">USDC</option>
+          </select>
+        </div>
+      </div>
+
+      <button type="submit" className="btn-primary" style={{ padding: "16px", borderRadius: "14px", fontSize: "16px", fontWeight: 700, marginTop: "8px" }}>
+        Review Transaction
+      </button>
+    </form>
   );
 }

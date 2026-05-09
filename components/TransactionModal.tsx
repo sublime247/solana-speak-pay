@@ -9,6 +9,8 @@ interface Tx {
   amount: string;
   token: string;
   recipient: string;
+  recipientDisplay?: string;
+  transcript?: string;
   chain?: string;
 }
 
@@ -47,8 +49,11 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
   const [route, setRoute] = useState<BridgeRoute | null>(null);
   const { send, error: solError } = useSendTransaction();
   const { connected } = useWallet();
-  
-  const usdValue = (parseFloat(tx.amount) * (MOCK_RATE_USD[tx.token] ?? 1)).toFixed(2);
+
+  const [editableAmount, setEditableAmount] = useState(tx.amount);
+  const [editableRecipient, setEditableRecipient] = useState(tx.recipient);
+
+  const usdValue = (parseFloat(editableAmount || "0") * (MOCK_RATE_USD[tx.token] ?? 1)).toFixed(2);
 
   useEffect(() => {
     if (tx.type === "bridge") {
@@ -100,12 +105,13 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
     }
 
     setStep("signing");
-    
+
     try {
       const txSignature = await send({
-        recipient: tx.recipient,
-        amount: parseFloat(tx.amount),
+        recipient: editableRecipient,
+        amount: parseFloat(editableAmount),
         token: tx.token as "SOL" | "USDC" | "USDT",
+        transcript: tx.transcript,
       });
 
       if (txSignature) {
@@ -225,10 +231,10 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
               </button>
             </div>
 
-            {/* Amount display */}
+            {/* Amount display (Editable) */}
             <div
               style={{
-                padding: "24px",
+                padding: "20px",
                 borderRadius: "16px",
                 background: "rgba(255,255,255,0.03)",
                 border: "1px solid rgba(255,255,255,0.06)",
@@ -236,28 +242,58 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
                 marginBottom: "20px",
               }}
             >
-              <p
-                className="font-display"
-                style={{ fontSize: "40px", fontWeight: 700, color: "var(--text-primary)", lineHeight: 1 }}
-              >
-                {tx.amount} <span style={{ color: tx.type === "bridge" ? "var(--accent-blue)" : "var(--solana-green)" }}>{tx.token}</span>
-              </p>
-              <p style={{ color: "var(--text-muted)", fontSize: "15px", marginTop: "6px" }}>≈ ${usdValue} USD</p>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: "8px" }}>
+                <input 
+                  value={editableAmount}
+                  onChange={(e) => setEditableAmount(e.target.value)}
+                  className="font-display"
+                  style={{ 
+                    fontSize: "40px", 
+                    fontWeight: 800, 
+                    color: "var(--text-primary)", 
+                    background: "transparent", 
+                    border: "none", 
+                    width: "140px", 
+                    textAlign: "right",
+                    outline: "none",
+                    borderBottom: "1px dashed rgba(255,255,255,0.2)"
+                  }}
+                />
+                <span style={{ fontSize: "24px", fontWeight: 700, color: tx.type === "bridge" ? "var(--accent-blue)" : "var(--solana-green)" }}>{tx.token}</span>
+              </div>
+              <p style={{ color: "var(--text-muted)", fontSize: "14px", marginTop: "4px" }}>≈ ${usdValue} USD</p>
             </div>
 
-            {/* Details */}
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "24px" }}>
-              <DetailRow label={tx.type === "bridge" ? "From Chain" : "To"} value={tx.type === "bridge" ? (tx.chain ?? "Ethereum") : tx.recipient} />
+            {/* Details (Editable Recipient) */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "24px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                <p style={{ fontSize: "11px", fontWeight: 700, color: "var(--text-muted)", marginLeft: "4px" }}>RECIPIENT</p>
+                <input 
+                  value={editableRecipient}
+                  onChange={(e) => setEditableRecipient(e.target.value)}
+                  style={{ 
+                    width: "100%",
+                    padding: "12px 14px",
+                    borderRadius: "12px",
+                    background: "rgba(255,255,255,0.02)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    color: "var(--text-primary)",
+                    fontSize: "14px",
+                    outline: "none"
+                  }}
+                  placeholder="Address or .sol"
+                />
+              </div>
               {tx.type === "bridge" && <DetailRow label="To Chain" value="Solana" />}
-               {tx.type === "bridge" && <DetailRow label="Protocol" value={route?.steps[0]?.tool || "LiFi Protocol"} highlight />}
-               <DetailRow 
-                 label="Network Fee" 
-                 value={route ? `$${parseFloat(route.estimate.feeCosts[0]?.amount || "0").toFixed(2)}` : `${MOCK_FEE} SOL`} 
-               />
-               <DetailRow 
-                 label="Estimated Time" 
-                 value={route ? `${Math.ceil(route.estimate.executionDuration / 60)} minutes` : (tx.type === "bridge" ? "2–5 minutes" : "~1 second")} 
-               />
+              {tx.type === "bridge" && <DetailRow label="Protocol" value={route?.steps[0]?.tool || "LiFi Protocol"} highlight />}
+              <DetailRow
+                label="Network Fee"
+                value={route ? `$${parseFloat(route.estimate.feeCosts[0]?.amount || "0").toFixed(2)}` : `${MOCK_FEE} SOL`}
+              />
+              <DetailRow
+                label="Estimated Time"
+                value={route ? `${Math.ceil(route.estimate.executionDuration / 60)} minutes` : (tx.type === "bridge" ? "2–5 minutes" : "~1 second")}
+              />
             </div>
 
             {/* Warning */}

@@ -8,15 +8,16 @@ export interface SendTransactionParams {
   recipient: string;
   amount: number;
   token: "SOL" | "USDC" | "USDT";
+  transcript?: string;
 }
 
 export function useSendTransaction() {
-  const { publicKey, sendTransaction } = useWallet();
+  const { publicKey, sendTransaction, signTransaction, signAllTransactions } = useWallet();
   const { connection } = useConnection();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const send = async ({ recipient, amount, token }: SendTransactionParams): Promise<string | null> => {
+  const send = async ({ recipient, amount, token, transcript }: SendTransactionParams): Promise<string | null> => {
     if (!publicKey) {
       setError("Wallet not connected");
       return null;
@@ -40,10 +41,31 @@ export function useSendTransaction() {
       let signature: string;
 
       if (token === "SOL") {
-        // Transfer SOL
-        const serializedTx = await transferSol(connection, publicKey, recipientPubkey, amount);
-        const transaction = Transaction.from(Buffer.from(serializedTx, "base64"));
-        signature = await sendTransaction(transaction, connection);
+        // Use custom program gateway for SOL transfers if transcript is provided (Hackathon Requirement)
+        if (transcript) {
+          try {
+            const { createGatewayPaymentInstruction } = await import("./gateway");
+            const instruction = await createGatewayPaymentInstruction(
+              connection,
+              { publicKey, signTransaction, signAllTransactions },
+              recipientPubkey.toString(),
+              amount,
+              transcript
+            );
+            const transaction = new Transaction().add(instruction);
+            signature = await sendTransaction(transaction, connection);
+          } catch (e) {
+            console.error("Gateway transfer failed, falling back to direct transfer", e);
+            const serializedTx = await transferSol(connection, publicKey, recipientPubkey, amount);
+            const transaction = Transaction.from(Buffer.from(serializedTx, "base64"));
+            signature = await sendTransaction(transaction, connection);
+          }
+        } else {
+          // Transfer SOL directly
+          const serializedTx = await transferSol(connection, publicKey, recipientPubkey, amount);
+          const transaction = Transaction.from(Buffer.from(serializedTx, "base64"));
+          signature = await sendTransaction(transaction, connection);
+        }
       } else {
         // Transfer SPL token
         const tokenInfo = TOKENS[token];

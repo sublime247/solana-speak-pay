@@ -19,10 +19,10 @@ export interface ParsedCommand {
 export async function parseCommand(text: string): Promise<ParsedCommand> {
   // BYPASSING OPENAI DUE TO QUOTA ISSUES
   // Using high-speed regex parsing for now
-  
+
   console.log("Local Parsing transcript:", text);
   const lower = text.toLowerCase();
-  
+
   // 0. Handle Contact Management
   if (lower.includes("contact") || lower.includes("address book")) {
     return {
@@ -35,38 +35,49 @@ export async function parseCommand(text: string): Promise<ParsedCommand> {
   if (lower.includes("send") || lower.includes("transfer") || lower.includes("pay")) {
     const amountMatch = text.match(/(\d+(?:\.\d+)?)/);
     const amount = amountMatch ? amountMatch[1] : "0";
-    
+
     const token = lower.includes("usdc") ? "USDC" : "SOL";
-    
+
     // Look for names in contacts
     const contacts = getContacts();
     let recipient = "";
     let recipientName = "";
 
-    for (const contact of contacts) {
-      if (lower.includes(contact.name.toLowerCase())) {
-        recipient = contact.address;
-        recipientName = contact.name;
-        break;
+    // Priority 1: Check for SNS domains (e.g. "bonfida.sol")
+    const snsMatch = lower.match(/([a-zA-Z0-9-]+\.sol)/);
+    if (snsMatch) {
+      recipient = snsMatch[1];
+      recipientName = snsMatch[1];
+    } else {
+      // Priority 2: Check contacts
+      for (const contact of contacts) {
+        if (lower.includes(contact.name.toLowerCase())) {
+          recipient = contact.address;
+          recipientName = contact.name;
+          break;
+        }
       }
     }
 
-    if (!recipientName && amount === "0") {
+    if (recipientName && amount !== "0") {
+      return {
+        action: "transfer",
+        amount,
+        token,
+        recipient: recipient || "Unknown",
+        response: `Got it. You want to send ${amount} ${token} to ${recipientName}. Should I proceed with this?`,
+      };
+    } else {
+      // If we're missing info, stay in "unknown" and ask specifically
+      let response = "I couldn't quite get the full details.";
+      if (amount === "0") response = `How much ${token} would you like to send?`;
+      else if (!recipientName) response = `Who would you like to send ${amount} ${token} to?`;
+
       return {
         action: "unknown",
-        response: `Of course! Who would you like to send ${token} to, and how much?`,
+        response: response,
       };
     }
-
-    return {
-      action: "transfer",
-      amount,
-      token,
-      recipient: recipient || "Unknown",
-      response: recipientName 
-        ? `Absolutely! I'm setting up a transfer of ${amount} ${token} for ${recipientName}. Please confirm the details.`
-        : `I've started a transfer for ${amount} ${token}. Please enter the recipient's address or select a contact.`,
-    };
   }
 
   // 2. Handle Bridging (e.g., "Bridge 100 USDC from Ethereum")
@@ -74,7 +85,7 @@ export async function parseCommand(text: string): Promise<ParsedCommand> {
     const fromMatch = text.match(/from\s+(\w+)/i);
     const amountMatch = text.match(/(\d+(?:\.\d+)?)/);
     const chain = fromMatch ? fromMatch[1] : "Ethereum";
-    
+
     return {
       action: "bridge",
       amount: amountMatch ? amountMatch[1] : "100",
