@@ -30,10 +30,14 @@ export async function parseCommand(text: string): Promise<ParsedCommand> {
     console.error("Stealth check failed", e);
   }
 
-  // BYPASSING OPENAI DUE TO QUOTA ISSUES
   // Using high-speed regex parsing for now
-
   console.log("Local Parsing transcript:", text);
+
+  // Helper to map written numbers to digits
+  const numberMap: Record<string, string> = {
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10"
+  };
 
   // 0. Handle Contact Management
   if (lower.includes("contact") || lower.includes("address book")) {
@@ -43,19 +47,37 @@ export async function parseCommand(text: string): Promise<ParsedCommand> {
     };
   }
 
-  // 1. Handle Transfers (e.g., "Send 0.1 SOL to Kush", "I want to send some SOL")
-  if (lower.includes("send") || lower.includes("transfer") || lower.includes("pay")) {
-    const amountMatch = text.match(/(\d+(?:\.\d+)?)/);
-    const amount = amountMatch ? amountMatch[1] : "0";
+  // 1. Handle Transfers (e.g., "Send one soul to Kush")
+  if (lower.includes("send") || lower.includes("transfer") || lower.includes("pay") || lower.includes("soul")) {
+    // Extract amount - check for digits OR written numbers
+    let amount = "0";
+    const digitMatch = lower.match(/(\d+(?:\.\d+)?)/);
+    if (digitMatch) {
+      amount = digitMatch[1];
+    } else {
+      // Check for written numbers
+      for (const [word, val] of Object.entries(numberMap)) {
+        if (lower.includes(word)) {
+          amount = val;
+          break;
+        }
+      }
+    }
 
-    const token = lower.includes("usdc") ? "USDC" : "SOL";
+    // Token detection with phonetic fallbacks
+    let token = "SOL";
+    if (lower.includes("usdc") || lower.includes("dollar")) {
+      token = "USDC";
+    } else if (lower.includes("sol") || lower.includes("soul") || lower.includes("solana")) {
+      token = "SOL";
+    }
 
     // Look for names in contacts
     const contacts = getContacts();
     let recipient = "";
     let recipientName = "";
 
-    // Priority 1: Check for SNS domains (e.g. "bonfida.sol")
+    // Priority 1: Check for SNS domains
     const snsMatch = lower.match(/([a-zA-Z0-9-]+\.sol)/);
     if (snsMatch) {
       recipient = snsMatch[1];
@@ -80,7 +102,6 @@ export async function parseCommand(text: string): Promise<ParsedCommand> {
         response: `Got it. You want to send ${amount} ${token} to ${recipientName}. Should I proceed with this?`,
       };
     } else {
-      // If we're missing info, stay in "unknown" and ask specifically
       let response = "I couldn't quite get the full details.";
       if (amount === "0") response = `How much ${token} would you like to send?`;
       else if (!recipientName) response = `Who would you like to send ${amount} ${token} to?`;
@@ -92,7 +113,7 @@ export async function parseCommand(text: string): Promise<ParsedCommand> {
     }
   }
 
-  // 2. Handle Bridging (e.g., "Bridge 100 USDC from Ethereum")
+  // 2. Handle Bridging
   if (lower.includes("bridge")) {
     const fromMatch = text.match(/from\s+(\w+)/i);
     const amountMatch = text.match(/(\d+(?:\.\d+)?)/);
@@ -108,7 +129,7 @@ export async function parseCommand(text: string): Promise<ParsedCommand> {
   }
 
   // 3. Handle Balance Queries
-  if (lower.includes("balance") || lower.includes("how much")) {
+  if (lower.includes("balance") || lower.includes("how much") || lower.includes("portfolio")) {
     return {
       action: "query_balance",
       response: "Of course, let me check the blockchain for your current balances...",
@@ -116,7 +137,7 @@ export async function parseCommand(text: string): Promise<ParsedCommand> {
   }
 
   // 4. Handle History Queries
-  if (lower.includes("history") || lower.includes("recent") || lower.includes("transaction")) {
+  if (lower.includes("history") || lower.includes("recent") || lower.includes("activity")) {
     return {
       action: "query_history",
       response: "Certainly. I'm pulling up your recent on-chain activity for you now.",

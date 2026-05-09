@@ -49,11 +49,25 @@ export default function TransactionModal({ tx, onConfirm, onCancel }: Transactio
   const [route, setRoute] = useState<BridgeRoute | null>(null);
   const { send, error: solError } = useSendTransaction();
   const { connected } = useWallet();
-
+  const [solPrice, setSolPrice] = useState(MOCK_RATE_USD.SOL);
   const [editableAmount, setEditableAmount] = useState(tx.amount);
   const [editableRecipient, setEditableRecipient] = useState(tx.recipient);
 
-  const usdValue = (parseFloat(editableAmount || "0") * (MOCK_RATE_USD[tx.token] ?? 1)).toFixed(2);
+  const currentRate = tx.token === "SOL" ? solPrice : (MOCK_RATE_USD[tx.token] ?? 1);
+  const usdValue = (parseFloat(editableAmount || "0") * currentRate).toFixed(2);
+
+  useEffect(() => {
+    const fetchPrice = async () => {
+      try {
+        const { getSolPrice } = await import("@/lib/solana/prices");
+        const price = await getSolPrice();
+        setSolPrice(price);
+      } catch (e) {
+        console.error("Failed to fetch live price for modal", e);
+      }
+    };
+    fetchPrice();
+  }, []);
 
   useEffect(() => {
     if (tx.type === "bridge") {

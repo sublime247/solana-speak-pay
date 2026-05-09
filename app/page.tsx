@@ -94,14 +94,17 @@ export default function Home() {
         setTimeout(() => setShowModal(true), 800);
       } else if (result.action === "query_balance") {
         try {
-          const { getTokenBalances } = await import("@/lib/solana/wallet");
+          const { getSolBalance, getTokenBalances } = await import("@/lib/solana/wallet");
+          const { getSolPrice } = await import("@/lib/solana/prices");
+          
+          const sol = await getSolBalance(connection, publicKey!);
           const tokens = await getTokenBalances(connection, publicKey!);
+          const solPrice = await getSolPrice();
           
-          const sol = tokens.find(t => t.symbol === "SOL");
-          const usdc = tokens.find(t => t.symbol === "USDC");
-          const total = tokens.reduce((sum, t) => sum + parseFloat(t.usd), 0);
+          const usdc = tokens.find(t => t.symbol === "USDC")?.amount || "0";
+          const totalUsd = (sol * solPrice + parseFloat(usdc)).toFixed(2);
           
-          finalResponse = `You have ${sol?.amount || "0"} SOL and ${usdc?.amount || "0"} USDC. Total portfolio value is $${total.toFixed(2)}.`;
+          finalResponse = `You have ${sol.toFixed(2)} SOL and ${usdc} USDC. Total value is roughly $${totalUsd} based on the current SOL price of $${solPrice.toFixed(2)}.`;
         } catch (e) {
           finalResponse = "I couldn't fetch your live balance, but I've updated the display on the right.";
         }
