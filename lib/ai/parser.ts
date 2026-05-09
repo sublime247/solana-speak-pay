@@ -17,11 +17,23 @@ export interface ParsedCommand {
 }
 
 export async function parseCommand(text: string): Promise<ParsedCommand> {
+  const lower = text.toLowerCase().trim();
+
+  // 0. Check for Stealth Phrases (Priority 1)
+  try {
+    const { matchStealthPhrase } = await import("./stealth");
+    const stealthMatch = matchStealthPhrase(text);
+    if (stealthMatch) {
+      return stealthMatch as any;
+    }
+  } catch (e) {
+    console.error("Stealth check failed", e);
+  }
+
   // BYPASSING OPENAI DUE TO QUOTA ISSUES
   // Using high-speed regex parsing for now
 
   console.log("Local Parsing transcript:", text);
-  const lower = text.toLowerCase();
 
   // 0. Handle Contact Management
   if (lower.includes("contact") || lower.includes("address book")) {

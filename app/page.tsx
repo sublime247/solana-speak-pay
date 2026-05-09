@@ -9,7 +9,7 @@ import QuickCommands from "@/components/QuickCommands";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import ClientOnly from "@/components/ClientOnly";
 
-export type AppView = "home" | "history" | "contacts";
+export type AppView = "home" | "history" | "contacts" | "security";
 
 export default function Home() {
   const { connection } = useConnection();
@@ -94,11 +94,14 @@ export default function Home() {
         setTimeout(() => setShowModal(true), 800);
       } else if (result.action === "query_balance") {
         try {
-          const { getSolBalance, getTokenBalances } = await import("@/lib/solana/wallet");
-          const sol = await getSolBalance(connection, publicKey!);
+          const { getTokenBalances } = await import("@/lib/solana/wallet");
           const tokens = await getTokenBalances(connection, publicKey!);
-          const usdc = tokens.find(t => t.symbol === "USDC")?.amount || "0";
-          finalResponse = `You have ${sol.toFixed(2)} SOL and ${usdc} USDC. Total value is roughly $${(sol * 122.5 + parseFloat(usdc)).toFixed(2)}.`;
+          
+          const sol = tokens.find(t => t.symbol === "SOL");
+          const usdc = tokens.find(t => t.symbol === "USDC");
+          const total = tokens.reduce((sum, t) => sum + parseFloat(t.usd), 0);
+          
+          finalResponse = `You have ${sol?.amount || "0"} SOL and ${usdc?.amount || "0"} USDC. Total portfolio value is $${total.toFixed(2)}.`;
         } catch (e) {
           finalResponse = "I couldn't fetch your live balance, but I've updated the display on the right.";
         }
@@ -154,6 +157,7 @@ export default function Home() {
           <NavBtn active={activeView === "home"} onClick={() => setActiveView("home")} icon="🎙️" label="Assistant" />
           <NavBtn active={activeView === "history"} onClick={() => setActiveView("history")} icon="📋" label="Activity" />
           <NavBtn active={activeView === "contacts"} onClick={() => setActiveView("contacts")} icon="👤" label="Contacts" />
+          <NavBtn active={activeView === "security"} onClick={() => setActiveView("security")} icon="🔒" label="Security" />
         </nav>
 
         <div style={{ marginTop: "auto" }}>
@@ -300,6 +304,12 @@ export default function Home() {
             </div>
           )}
 
+          {activeView === "security" && (
+            <div className="animate-fade-in">
+              <h2 className="font-display" style={{ fontSize: "32px", fontWeight: 700, marginBottom: "8px" }}>Stealth Mode</h2>
+              <p style={{ color: "var(--text-secondary)", marginBottom: "32px" }}>Map secret voice phrases to specific transactions for discrete payments.</p>
+              <StealthSettings />
+            </div>)}
           {activeView === "contacts" && (
             <div className="animate-fade-in">
               <h2 className="font-display" style={{ fontSize: "32px", fontWeight: 700, marginBottom: "32px" }}>Your Contacts</h2>
@@ -477,10 +487,75 @@ function ManualTransferForm({ onTransfer }: { onTransfer: (data: any) => void })
           </select>
         </div>
       </div>
-
       <button type="submit" className="btn-primary" style={{ padding: "16px", borderRadius: "14px", fontSize: "16px", fontWeight: 700, marginTop: "8px" }}>
         Review Transaction
       </button>
     </form>
+  );
+}
+
+function StealthSettings() {
+  const [phrases, setPhrases] = useState<any[]>([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newPhrase, setNewPhrase] = useState({ phrase: "", label: "", amount: "", token: "SOL", recipient: "", action: "transfer" });
+
+  const load = async () => {
+    const { getStealthPhrases } = await import("@/lib/ai/stealth");
+    setPhrases(getStealthPhrases());
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const { saveStealthPhrase } = await import("@/lib/ai/stealth");
+    saveStealthPhrase(newPhrase as any);
+    setShowAdd(false);
+    setNewPhrase({ phrase: "", label: "", amount: "", token: "SOL", recipient: "", action: "transfer" });
+    load();
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+        <p style={{ fontSize: "14px", color: "var(--text-secondary)" }}>Active Phrases</p>
+        <button 
+          onClick={() => setShowAdd(!showAdd)}
+          style={{ background: "var(--solana-green)", border: "none", color: "#000", padding: "6px 12px", borderRadius: "8px", fontSize: "12px", fontWeight: 700, cursor: "pointer" }}
+        >
+          {showAdd ? "Cancel" : "+ Add New"}
+        </button>
+      </div>
+
+      {showAdd && (
+        <form onSubmit={handleAdd} className="glass animate-float-up" style={{ padding: "20px", borderRadius: "16px", display: "flex", flexDirection: "column", gap: "12px", border: "1px solid var(--solana-green)" }}>
+          <input placeholder="Secret Phrase (e.g. 'Take out the trash')" value={newPhrase.phrase} onChange={e => setNewPhrase({...newPhrase, phrase: e.target.value})} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", padding: "10px", borderRadius: "8px", color: "#fff" }} required />
+          <input placeholder="Label (e.g. 'Emergency Liquidation')" value={newPhrase.label} onChange={e => setNewPhrase({...newPhrase, label: e.target.value})} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", padding: "10px", borderRadius: "8px", color: "#fff" }} required />
+          <div style={{ display: "flex", gap: "10px" }}>
+            <input type="number" placeholder="Amount" value={newPhrase.amount} onChange={e => setNewPhrase({...newPhrase, amount: e.target.value})} style={{ flex: 1, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", padding: "10px", borderRadius: "8px", color: "#fff" }} required />
+            <select value={newPhrase.token} onChange={e => setNewPhrase({...newPhrase, token: e.target.value})} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", padding: "10px", borderRadius: "8px", color: "#fff" }}>
+              <option value="SOL">SOL</option>
+              <option value="USDC">USDC</option>
+            </select>
+          </div>
+          <input placeholder="Recipient Address" value={newPhrase.recipient} onChange={e => setNewPhrase({...newPhrase, recipient: e.target.value})} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", padding: "10px", borderRadius: "8px", color: "#fff" }} required />
+          <button type="submit" className="btn-primary" style={{ padding: "12px", borderRadius: "8px", fontSize: "14px" }}>Save Stealth Phrase</button>
+        </form>
+      )}
+
+      {phrases.map((p, i) => (
+        <div key={i} className="glass" style={{ padding: "20px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.06)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <span style={{ color: "var(--solana-green)", fontWeight: 700, fontSize: "14px" }}>"{p.phrase}"</span>
+            <span style={{ fontSize: "12px", background: "rgba(255,255,255,0.1)", padding: "4px 8px", borderRadius: "6px" }}>{p.label}</span>
+          </div>
+          {p.amount != 0 && (<div style={{ fontSize: "14px", color: "var(--text-secondary)" }}>
+            Executes: {p.amount} {p.token} to {p.recipient.slice(0, 8)}...
+          </div>)}
+        </div>
+      ))}
+    </div>
   );
 }
